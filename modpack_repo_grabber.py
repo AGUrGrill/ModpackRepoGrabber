@@ -1,112 +1,58 @@
 import os
 import requests
-import base64
 import shutil
 import stat
-import tkinter
-import threading
+import tkinter as tk
 from git import Repo
 from os import path
 from tkinter import *
 import tkinter.font as tkFont
+from io import BytesIO
+from PIL import Image, ImageTk
 
+important_image_url="https://static.wikia.nocookie.net/videogaming/images/b/b7/Deltarune_-_Sprite_-_Ralsei_-_Splat.png/revision/latest?cb=20230425002225"
+image = None
+saved_image = None
 has_info = True
-has_token = False
 modpack_number = None
 name = None
-repo = None
-token = None
+#repo = None
+#token = None
+#has_token = False
 
-def main():
-    global has_token
-    global name
-
-    if os.path.exists("gitfo.txt"):
-        print("Info found.")
-        with open("gitfo.txt", "r") as f:
-            info = f.readlines()
-            try:
-                info[2].strip().find("github")
-                has_token = True
-                print("Token found.")
-            except Exception as e:
-                print("No token found.")
-    else:
-        with open("gitfo.txt", "w") as file:
-            file.write("Example")
-            print("Created new info file.")
-        
-    ui()
-
-# Main UI
-def ui():
-    global modpack_number
-    global name
-    global repo
-    global token
-
-    root = tkinter.Tk()
-    root.title("Modopack Repo Grabber")
-
-    header_custom_font = tkFont.Font(family="Monocraft", size=18)
-    custom_font = tkFont.Font(family="Monocraft", size=12)
-
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    root.geometry(f"{int(screen_width/3)}x{int(screen_height/2)}")
-    root.configure(bg="lightgray")
-
-    root.size
-
-    info_label = Label(root, text=f"GitHub Source: {get_github_name()}", font=header_custom_font, bg="lightgray")
-    info_label.pack()
-
-    # View Modpacks
-    view_modpacks = Label(root, text=f"Modpacks\n{get_existing_repos()}", font=header_custom_font, bg="lightgray")
-    view_modpacks.pack(padx=2, pady=5)
-
-    # Choose Modpack
-    choose_modpack = Label(root, text="Enter Modpack #:", font=custom_font, bg="lightgray")
-    modpack_number = Entry(root, width=50)
-    choose_modpack.pack(padx=2, pady=5)
-    modpack_number.pack(padx=2, pady=5)
-
-    # Download Modpacks
-    download_button = tkinter.Button(root, text="Download Modpacks", width=25, command=clone_repo, font=custom_font)
-    download_button.pack(padx=2, pady=2)
-
-    # Info Entry
-    name_label = Label(root, text="GitHub Name:", font=custom_font, bg="lightgray")
-    name = Entry(root, width=50)
-    repo_label = Label(root, text="Repo Name for Uploads:", font=custom_font, bg="lightgray")
-    repo = Entry(root, width=50)
-    token_label = Label(root, text="GitHub Token for Uploads:", font=custom_font, bg="lightgray")
-    token = Entry(root, width=50)
-    name_label.pack(padx=2, pady=5)
-    name.pack(padx=2, pady=5)
-    repo_label.pack(padx=2, pady=5)
-    repo.pack(padx=2, pady=5)
-    token_label.pack(padx=2, pady=5)
-    token.pack(padx=2, pady=5)
-
-    # Save Information
-    save_button = tkinter.Button(root, text="Save Information", width=25, command=lambda: save_info(root, info_label, view_modpacks), font=custom_font)
-    save_button.pack(padx=2, pady=5)
-
-    # Upload Files
-    #upload_button = tkinter.Button(root, text="Upload Files", width=25, command=upload_file)
-    #upload_button.pack()
-
-    # Quit Button
-    quit_button = tkinter.Button(root, text="Quit", width=25, command=root.destroy, font=custom_font)
-    quit_button.pack()
-
-    root.mainloop()
+if os.path.exists("gitfo.txt"):
+    print("File found.")
+    with open("gitfo.txt", "r") as f:
+        info = f.readlines()
+        try: # Look for username
+            name = info[0]
+            has_token = True
+            print("Username found.")
+        except:
+            print("No username found.")
+        #try: # Look for designated repo
+        #    token = info[2]
+        #    has_token = True
+        #    print("Token found.")
+        #except:
+        #    print("No token found.")
+        #try: # Look for github token
+        #    info[2].strip().find("github")
+        #    token = info[2]
+        #    has_token = True
+        #    print("Token found.")
+        #except:
+        #    print("No token found.")
+else:
+    print("File not found. Creating...")
+    with open("gitfo.txt", "w") as file:
+        file.write("Example")
+        print("Created new info file.")  
 
 # Update vital UI labels
-def update_ui(root, info, packs):
-    info.config(text=f"GitHub Source: {get_github_name()}")
-    packs.config(text=f"Modpacks\n{get_existing_repos()}")
+def update_ui():
+    username_entry.config(text=get_github_name())
+    view_modpacks.config(text=f"Modpacks\n{get_modpack_names()}")
     
 # Allows user to download repos
 def clone_repo():
@@ -119,7 +65,7 @@ def clone_repo():
     else: # Get Input
         return
 
-    repo_number = int(modpack_number.get())
+    repo_number = int(modpack_entry.get())
     repo = modpacks[repo_number-1]
 
     curseforge_dir_path = os.path.expanduser(f"~\\curseforge\\minecraft\\Instances\\{repo}")
@@ -190,7 +136,67 @@ def clone_repo():
     
     print("Cloning completed.")
 
+# Saves user information locally for easier reuse
+def save_info():
+    info = f"{username_entry.get()}"
+    #\n{repo.get()}\n{token.get()}"
+
+    with open("gitfo.txt", "w") as f:
+        f.write(info)
+
+    update_ui()
+
+# Gets a list of avaliable GitHub repos with the term 'modpack'
+def get_existing_repos():
+    packs = []
+    # Checks if info is saved
+    if has_info: # Read info
+        with open("gitfo.txt", "r") as f:
+            info = f.readlines()
+            name = info[0].strip()
+    else:
+        return packs
+
+    # Sends request for user GitHub repos
+    url = f"https://api.github.com/users/{name}/repos"
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        # print("Successfully aquired response!")
+        data = response.json()
+        for repo in data:
+            line = repo["name"]
+            if "modpack" in line.lower() and line != "ModpackRepoGrabber":
+                packs.append(line)
+    else:
+        print(f"Failed to aquire response. {response.status_code}")
+    
+    return packs
+
+def get_modpack_names():
+    modpack_list = get_existing_repos()
+    if modpack_list == []:
+        return "No Packs Found"
+    formatted_list = ""
+    counter = 1
+    #modpack_list = json.dumps(modpack_list)
+    # Format Modpack List
+    for element in modpack_list:
+        element = element.replace("modpack-", "")
+        formatted_list += f"{counter}: {element}\n"
+        counter+=1
+
+    return formatted_list
+
+# Get GitHub name
+def get_github_name():
+    with open("gitfo.txt", "r") as f:
+        info = f.readlines()
+
+    return info[0]
+
 # Allows the user to upload files to their GitHub account (shit code)
+'''''
 def upload_file():
     # Checks if info is saved
     if has_info: # Read info
@@ -236,49 +242,97 @@ def upload_file():
     else:
         print(f"Upload failed. {response.status_code}: {response.json()}")
 
-# Saves user information locally for easier reuse
-def save_info(root, info_label, view_modpacks):
-    info = f"{name.get()}\n{repo.get()}\n{token.get()}"
+# Upload Files
+#upload_button = tkinter.Button(root, text="Upload Files", width=25, command=upload_file)
+#upload_button.pack()
+'''''
 
-    with open("gitfo.txt", "w") as f:
-        f.write(info)
+# Aquire Glorious Image
+def get_image():
+    url_response = requests.get(important_image_url)
+    image = Image.open(BytesIO(url_response.content))
+    height = int(image.height/3)
+    width = int(image.width/3)
+    image = image.resize((height, width), Image.LANCZOS)
+    image = ImageTk.PhotoImage(image)
+    important_image.config(image=image)
+    important_image.image = image
 
-    update_ui(root, info_label, view_modpacks)
+# UI
+root = tk.Tk()
+root.title("Modopack Repo Grabber")
 
-# Gets a list of avaliable GitHub repos with the term 'modpack'
-def get_existing_repos():
-    packs = []
-    # Checks if info is saved
-    if has_info: # Read info
-        with open("gitfo.txt", "r") as f:
-            info = f.readlines()
-            name = info[0].strip()
-    else:
-        return packs
+# Fonts
+header_custom_font = tkFont.Font(family="Monocraft", size=12)
+custom_font = tkFont.Font(family="Monocraft", size=10)
 
-    # Sends request for user GitHub repos
-    url = f"https://api.github.com/users/{name}/repos"
-    response = requests.get(url)
+# Screen Settings
+screen_width = root.winfo_screenwidth()
+screen_height = root.winfo_screenheight()
+adjusted_screen_width = int(screen_width/4)
+adjusted_screen_height = int(screen_height/2.75)
+root.geometry(f"{adjusted_screen_width}x{adjusted_screen_height}")
+root.configure(bg="lightgray")
+padding_y = 2
+root.resizable(False, False)
 
-    if response.status_code == 200:
-        # print("Successfully aquired response!")
-        data = response.json()
-        for repo in data:
-            line = repo["name"]
-            if "modpack" in line.lower():
-                packs.append(line)
-    else:
-        print(f"Failed to aquire response. {response.status_code}")
-    
-    return packs
+# Username Frame
+name_frame = tk.Frame(root, bg="lightgray", pady=padding_y*4)
+name_frame.grid(row=0, column=0, sticky=NSEW)
+username_label = tk.Label(name_frame, text="Username:", font=header_custom_font, bg="lightgray")
+username_label.place(relx=0.05, rely=0.5, anchor=W)
+username_entry = tk.Entry(name_frame, font=header_custom_font)
+username_entry.insert(0, name)
+username_entry.grid(row=0, column=1, sticky=NSEW)
 
-# Get GitHub name
-def get_github_name():
-    with open("gitfo.txt", "r") as f:
-        info = f.readlines()
+# Modpack Frame
+#pack_frame = tk.Frame(root, bg="lightgray", pady=padding_y*4)
+#pack_frame.grid(row=1, column=0, sticky=NSEW, pady=padding_y)
+view_modpacks = tk.Label(root, text=f"Modpacks\n{get_modpack_names()}", font=header_custom_font, bg="lightgray")
+view_modpacks.grid(row=1, column=0, sticky=NSEW, pady=padding_y)
+important_image = tk.Label(root, bg="lightgray")
+important_image.place(relx=0.2, rely=0.3, anchor=CENTER)
 
-    return info[0]
+# Modpack Options Frame
+pack_options_frame = tk.Frame(root, bg="lightgray")
+pack_options_frame.grid(row=2, column=0, sticky=NSEW)
+modpack_label = tk.Label(pack_options_frame, text="Modpack #:", font=header_custom_font, bg="lightgray")
+modpack_label.place(relx=0.05, rely=0.35, anchor=W)
+modpack_entry = tk.Entry(pack_options_frame, font=header_custom_font)
+modpack_entry.grid(row=0, column=1, sticky=NSEW)
 
-# Call Main
-if __name__ == "__main__":
-    main()
+# Button Frame
+button_frame = tk.Frame(root, bg="lightgray")
+button_frame.grid(row=3, column=0, sticky=NSEW)
+download_button = tk.Button(button_frame, text="Download/Update Modpack", command=clone_repo, font=custom_font)
+download_button.grid(row=0, column=0, sticky=NSEW, pady=padding_y)
+save_button = tk.Button(button_frame, text="Change User", command=lambda: save_info(), font=custom_font)
+save_button.grid(row=1, column=0, sticky=NSEW, pady=padding_y)
+quit_button = tk.Button(button_frame, text="Quit", command=root.destroy, font=custom_font)
+quit_button.grid(row=2, column=0, sticky=NSEW, pady=padding_y)
+
+# Configure Grid
+# Main Frame
+for i in range(4): 
+    root.rowconfigure(i, weight=1)
+root.columnconfigure(0, weight=1)
+
+# Name Frame
+name_frame.rowconfigure(0, weight=1)
+name_frame.columnconfigure(0, weight=1)
+name_frame.columnconfigure(1, weight=1)
+
+# Modpack Options Frame
+pack_options_frame.rowconfigure(0, weight=1)
+pack_options_frame.rowconfigure(1, weight=1)
+pack_options_frame.columnconfigure(0, weight=1)
+pack_options_frame.columnconfigure(1, weight=1)
+
+# Button Frame
+for i in range(3):
+    button_frame.rowconfigure(i, weight=1)
+button_frame.columnconfigure(0, weight=1)
+
+get_image()
+
+root.mainloop()
